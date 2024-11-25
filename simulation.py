@@ -27,6 +27,7 @@ class RateSimulationResult:
 plt.rcParams['font.family'] = ['sans-serif']
 plt.rcParams['font.size'] = '20'
 plt.rcParams['font.sans-serif'] = ['SimHei']
+plt.rcParams['axes.unicode_minus'] = False  # Fix minus sign display
 
 def simulate_rate_distribution(
     avg_rate: float,

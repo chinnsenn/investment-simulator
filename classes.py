@@ -27,6 +27,7 @@ class IndexStock(Enum):
     GSCP = ("标普500指数", "^GSPC")
     DJI = ("道琼斯指数", "^DJI")
     IWM = ("罗素2000指数", "IWM")
+    BTCF = ("比特币", "BTC=F")
 
     def __init__(self, label: str, symbol: str):
         self.label = label

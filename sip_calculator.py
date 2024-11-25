@@ -270,11 +270,11 @@ def get_nasdaq100_stats(symbol:str, years):
         return 10.0, 8.0  # 返回默认值
 
 def create_interface():
-    with gr.Blocks(theme=gr.themes.Soft(), title="多币种 DCA 收益计算器") as demo:
-        gr.Markdown("# 📈 多币种 DCA 收益计算器")
+    with gr.Blocks(theme=gr.themes.Soft(), title="DCA 收益模拟计算器") as demo:
+        gr.Markdown("# 📈 DCA 收益模拟计算器")
         
         with gr.Row():
-            with gr.Column():
+            with gr.Row():
                 with gr.Column():
                     investment_amount = gr.Number(
                         label="每次定投金额",
@@ -285,64 +285,77 @@ def create_interface():
                         label="预期平均年化收益率（%）",
                         value=10.0
                     )
+                    volatility = gr.Number(
+                        label="收益率波动率（）",
+                        value=8.0,
+                        minimum=0.0
+                    )
                     years = gr.Number(
                         label="投资年限（年）",
                         value=5.0,
                         minimum=1.0
                     )
-                    
+                
                 with gr.Column():
-                    with gr.Row():
-                        symbollabel = gr.Dropdown(
-                            [f.label for f in IndexStock],
-                            label="指数 Symbol",
-                            value=IndexStock.QQQ.label,
-                        )
-                        data_years = gr.Number(
-                            label="过去多少年？",
-                            value=40.0,
-                            minimum=10.0
-                        )
-                    # 新增导入纳斯达克100数据按钮
-                    import_nasdaq_btn = gr.Button("📊 导入该标的历史数据", variant="secondary")
-            
-            with gr.Column():
-                volatility = gr.Number(
-                    label="收益率波动率",
-                    value=8.0,
-                    minimum=0.0
+                    frequency = gr.Radio(
+                        label="定投周期",
+                        choices=[f.label for f in InvestmentFrequency],
+                        value=InvestmentFrequency.MONTHLY.label
+                    )
+                    currency = gr.Radio(
+                        label="货币类型",
+                        choices=[c.code for c in Currency],
+                        value=Currency.CNY.code
+                    )
+                    simulation_mode = gr.Checkbox(
+                        label="真实模拟模式",
+                        value=True
+                    )
+                    simulation_rounds = gr.Slider(
+                        label="模拟轮数",
+                        minimum=1,
+                        maximum=20,
+                        value=5,
+                        step=1,
+                        visible=True
+                    )
+                    distribution_model = gr.Radio(
+                        label="收益率分布模型",
+                        choices=[model.name for model in RateDistributionModel],
+                        value=RateDistributionModel.NORMAL.name
+                    )
+        with gr.Column():
+            with gr.Row():
+                symbollabel = gr.Dropdown(
+                    [f.label for f in IndexStock],
+                    label="回测指标",
+                    value=IndexStock.QQQ.label,
                 )
-                frequency = gr.Radio(
-                    label="定投周期",
-                    choices=[f.label for f in InvestmentFrequency],
-                    value=InvestmentFrequency.MONTHLY.label
-                )
-                currency = gr.Radio(
-                    label="货币类型",
-                    choices=[c.code for c in Currency],
-                    value=Currency.CNY.code
-                )
-                simulation_mode = gr.Checkbox(
-                    label="真实模拟模式",
-                    value=True
-                )
-                simulation_rounds = gr.Slider(
-                    label="模拟轮数",
-                    minimum=1,
-                    maximum=20,
+                data_years = gr.Slider(
+                    label="回测年数",
+                    minimum=2,
+                    maximum=40,
                     value=5,
                     step=1,
                     visible=True
                 )
-                distribution_model = gr.Radio(
-                    label="收益率分布模型",
-                    choices=[model.name for model in RateDistributionModel],
-                    value=RateDistributionModel.NORMAL.name
-                )
+                
+            # 新增导入纳斯达克100数据按钮
+            import_nasdaq_btn = gr.Button(f"📊 导入「{IndexStock.QQQ.label}」的历史数据", variant="secondary")
 
         calculate_btn = gr.Button("开始计算", variant="primary")
         
         output_html = gr.HTML(label="计算结果")
+        
+        def on_dropdown_change(symbol):
+            return gr.Button(value=f"导入「{symbol}」的历史回测数据")
+        
+        # 监听下拉框的变化
+        symbollabel.change(
+            fn=on_dropdown_change,  # 处理函数
+            inputs=[symbollabel],      # 输入组件
+            outputs=[import_nasdaq_btn]        # 输出组件
+        )
         
         calculate_btn.click(
             calculate_investment,
@@ -359,8 +372,6 @@ def create_interface():
             ],
             outputs=[output_html]
         )
-        # symbol = next(s for s in IndexStock if s.label == symbollabel.value).symbol
-        # print("symbol type:",symbol)
         
         # 添加导入数据的处理函数
         def import_nasdaq_data(symbol, years):
