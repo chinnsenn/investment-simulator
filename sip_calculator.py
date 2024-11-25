@@ -289,13 +289,6 @@ def create_interface():
                     value=5.0,
                     minimum=1.0
                 )
-            
-            with gr.Column():
-                volatility = gr.Number(
-                    label="收益率波动率",
-                    value=8.0,
-                    minimum=0.0
-                )
                 symbol = gr.Textbox(
                     label="指数 Symbol",
                     value="QQQ"
@@ -307,6 +300,13 @@ def create_interface():
                 )
                 # 新增导入纳斯达克100数据按钮
                 import_nasdaq_btn = gr.Button("📊 导入该标的历史数据", variant="secondary")
+            
+            with gr.Column():
+                volatility = gr.Number(
+                    label="收益率波动率",
+                    value=8.0,
+                    minimum=0.0
+                )
                 frequency = gr.Radio(
                     label="定投周期",
                     choices=[f.label for f in InvestmentFrequency],
