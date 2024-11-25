@@ -1,43 +1,11 @@
 import numpy as np
-import statistics
 import gradio as gr
 from typing import Dict, List
-import pandas as pd
 from decimal import Decimal
 from dataclasses import dataclass
 from enum import Enum
-
-class Currency(Enum):
-    CNY = ("CNY", "¥")
-    USD = ("USD", "$")
-    EUR = ("EUR", "€")
-    GBP = ("GBP", "£")
-    JPY = ("JPY", "¥")
-
-    def __init__(self, code: str, symbol: str):
-        self.code = code
-        self.symbol = symbol
-
-class InvestmentFrequency(Enum):
-    HALF_MONTHLY = ("半月度", 24)
-    MONTHLY = ("月度", 12)
-    QUARTERLY = ("季度", 4)
-    HALF_YEARLY = ("半年度", 2)
-    YEARLY = ("年度", 1)
-
-    def __init__(self, label: str, periods_per_year: int):
-        self.label = label
-        self.periods_per_year = periods_per_year
-
-@dataclass
-class InvestmentResult:
-    year: int
-    annual_rate: float
-    investment_amount: float
-    yearly_profit: float
-    year_end_total: float
-    cumulative_investment: float
-    currency: Currency
+from classes import *
+from simulation import simulate_rate_distribution, RateDistributionModel, generate_rate_summary ,plot_rate_distribution
 
 def format_currency(amount: float, currency: Currency) -> str:
     """格式化货币显示"""
@@ -50,6 +18,42 @@ def format_percentage(value: float) -> str:
     """格式化百分比显示"""
     return f"{value:,.2f}%"
 
+def generate_yearly_rates(
+    avg_rate: float,
+    years: int,
+    volatility: float,
+    distribution_model: RateDistributionModel = RateDistributionModel.NORMAL,
+    **kwargs
+) -> List[float]:
+    if volatility == 0:
+        return [avg_rate] * years
+    
+    mu = avg_rate / 100
+    sigma = volatility / 100
+    
+    match distribution_model:
+        case RateDistributionModel.NORMAL:
+            rates = np.random.normal(mu, sigma, years)
+        case RateDistributionModel.LOGNORMAL:
+            mu_log = np.log((mu ** 2) / np.sqrt(sigma ** 2 + mu ** 2))
+            sigma_log = np.sqrt(np.log(1 + (sigma ** 2) / (mu ** 2)))
+            rates = np.random.lognormal(mu_log, sigma_log, years)
+        case RateDistributionModel.STUDENT_T:
+            df = kwargs.get('df', 3)
+            rates = mu + sigma * np.random.standard_t(df, years)
+        case RateDistributionModel.UNIFORM:
+            min_rate = kwargs.get('min_rate', mu - sigma * np.sqrt(3))
+            max_rate = kwargs.get('max_rate', mu + sigma * np.sqrt(3))
+            rates = np.random.uniform(min_rate, max_rate, years)
+        case _:
+            raise ValueError(f"Unsupported distribution model: {distribution_model}")
+    
+    rates = rates * 100
+    min_allowed_rate = kwargs.get('min_allowed_rate', -50)
+    rates = np.maximum(rates, min_allowed_rate)
+    
+    return rates.tolist()
+
 def calculate_investment(
     investment_amount: float,
     avg_rate: float,
@@ -58,31 +62,29 @@ def calculate_investment(
     frequency: str,
     currency: str,
     simulation_mode: bool,
-    simulation_rounds: int
+    simulation_rounds: int,
+    distribution_model: str
 ) -> tuple:
     """投资计算主函数"""
     if not simulation_mode:
         volatility = 0
         simulation_rounds = 1
     
-    # 获取货币设置
     selected_currency = Currency[currency]
-    
-    # 获取频率设置
     selected_frequency = next(f for f in InvestmentFrequency if f.label == frequency)
     periods_per_year = selected_frequency.periods_per_year
-    
-    # 计算年度投资金额
     yearly_investment = investment_amount * periods_per_year
     
-    def generate_yearly_rates():
-        """生成年化收益率"""
-        if volatility == 0:
-            return [avg_rate] * years
-        return np.random.normal(avg_rate, volatility, years).tolist()
-
+    # 使用选择的分布模型生成收益率
+    result = simulate_rate_distribution(
+        avg_rate=avg_rate,
+        volatility=volatility,
+        years=years,
+        simulation_rounds=simulation_rounds,
+        distribution_model=RateDistributionModel[distribution_model]
+    )
+    
     def calculate_year_investment(yearly_rates):
-        """计算年度投资结果"""
         results = []
         current_amount = 0
         period_investment = yearly_investment / periods_per_year
@@ -100,16 +102,6 @@ def calculate_investment(
             year_investment = period_investment * periods_per_year
             year_profit = current_amount - year_start_amount - year_investment
             
-            result = InvestmentResult(
-                year=year,
-                annual_rate=rate,
-                investment_amount=year_investment,
-                yearly_profit=year_profit,
-                year_end_total=current_amount,
-                cumulative_investment=total_investment,
-                currency=selected_currency
-            )
-            
             results.append({
                 '年份': f"第{year}年",
                 '年化收益率': format_percentage(rate),
@@ -124,9 +116,10 @@ def calculate_investment(
     # 存储所有模拟结果
     all_simulations = []
     
-    for _ in range(simulation_rounds):
-        yearly_rates = generate_yearly_rates()
-        results, final_amt, total_inv, total_prof = calculate_year_investment(yearly_rates)
+    # 使用生成的收益率进行模拟
+    rates_reshaped = result.rates.reshape(simulation_rounds, years)
+    for yearly_rates in rates_reshaped:
+        sim_results, final_amt, total_inv, total_prof = calculate_year_investment(yearly_rates)
         return_rate = (final_amt / total_inv * 100) - 100
         all_simulations.append({
             '最终金额': final_amt,
@@ -134,7 +127,7 @@ def calculate_investment(
             '总收益': total_prof,
             '年化收益率': ((final_amt/total_inv)**(1/years) - 1) * 100,
             '资产回报率': return_rate,
-            '详细数据': results
+            '详细数据': sim_results
         })
 
     # 计算统计结果
@@ -144,7 +137,42 @@ def calculate_investment(
     return_rates = [sim['资产回报率'] for sim in all_simulations]
     total_investment = all_simulations[0]['总投资']
 
-    # 构建结果摘要HTML
+    # 生成投资结果摘要
+    summary_html = generate_investment_summary(
+        total_investment, final_amounts, total_profits, 
+        annualized_returns, return_rates, selected_currency
+    )
+    
+    # 生成收益率分布图
+    distribution_plot = plot_rate_distribution(result)
+    
+    # 合并HTML结果
+    final_html = summary_html + distribution_plot
+    
+    return final_html
+
+def generate_investment_summary(
+    total_investment: float,
+    final_amounts: List[float],
+    total_profits: List[float],
+    annualized_returns: List[float],
+    return_rates: List[float],
+    selected_currency: Currency
+) -> str:
+    """
+    生成投资结果摘要的HTML
+    
+    Args:
+        total_investment: 总投资金额
+        final_amounts: 最终金额列表
+        total_profits: 总收益列表
+        annualized_returns: 年化收益率列表
+        return_rates: 资产回报率列表
+        selected_currency: 选择的货币类型
+    
+    Returns:
+        str: HTML格式的投资结果摘要
+    """
     summary_html = f"""
     <div style="background-color: #e3f2fd; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
         <h3 style="color: #1565c0; margin-top: 0;">💰 投资结果摘要</h3>
@@ -155,17 +183,17 @@ def calculate_investment(
             </div>
             <div style="background-color: #ffffff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                 <h4 style="color: #1976d2; margin-top: 0;">账户总额</h4>
-                <p style="font-size: 1.2em; color: #2196f3;">{format_currency(statistics.mean(final_amounts), selected_currency)}</p>
+                <p style="font-size: 1.2em; color: #2196f3;">{format_currency(np.mean(final_amounts), selected_currency)}</p>
             </div>
         </div>
         <div style="background-color: #ffffff; padding: 15px; border-radius: 8px; margin-top: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
             <h4 style="color: #1976d2; margin-top: 0;">投资回报率</h4>
-            <p style="font-size: 1.2em; color: #2196f3;">{format_percentage(statistics.mean(return_rates))}</p>
+            <p style="font-size: 1.2em; color: #2196f3;">{format_percentage(np.mean(return_rates))}</p>
         </div>
     </div>
     """
 
-    if simulation_mode and simulation_rounds > 2:
+    if len(final_amounts) > 2:
         summary_html += f"""
         <div style="background-color: #f5f5f5; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
             <h3 style="color: #2c3e50;">📊 模拟统计结果</h3>
@@ -186,39 +214,31 @@ def calculate_investment(
                 </div>
                 <div style="background-color: #bbdefb; padding: 15px; border-radius: 8px;">
                     <h4 style="color: #1565c0; margin-top: 0;">平均情况</h4>
-                    <p>最终金额: {format_currency(statistics.mean(final_amounts), selected_currency)}</p>
-                    <p>总收益: {format_currency(statistics.mean(total_profits), selected_currency)}</p>
-                    <p>年化收益率: {format_percentage(statistics.mean(annualized_returns))}</p>
-                    <p>资产回报率: {format_percentage(statistics.mean(return_rates))}</p>
+                    <p>最终金额: {format_currency(np.mean(final_amounts), selected_currency)}</p>
+                    <p>总收益: {format_currency(np.mean(total_profits), selected_currency)}</p>
+                    <p>年化收益率: {format_percentage(np.mean(annualized_returns))}</p>
+                    <p>资产回报率: {format_percentage(np.mean(return_rates))}</p>
                 </div>
             </div>
         </div>
         """
 
-    # 构建基本信息HTML
-    output_html = f"""
-    <div style="background-color: #f5f5f5; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
-        <h3 style="color: #2c3e50;">投资参数</h3>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-            <div style="background-color: #ffffff; padding: 15px; border-radius: 8px;">
-                <h4 style="color: #3498db;">基本信息</h4>
-                <p>投资周期: {frequency}</p>
-                <p>每次投资: {format_currency(investment_amount, selected_currency)}</p>
-                <p>年度投资: {format_currency(yearly_investment, selected_currency)}</p>
-                <p>投资年限: {years}年</p>
-            </div>
-            <div style="background-color: #ffffff; padding: 15px; border-radius: 8px;">
-                <h4 style="color: #3498db;">收益参数</h4>
-                <p>目标收益率: {format_percentage(avg_rate)}</p>
-                <p>波动率: {format_percentage(volatility)}</p>
-                <p>模拟轮数: {simulation_rounds}次</p>
-                <p>货币类型: {selected_currency.code}</p>
-            </div>
-        </div>
-    </div>
-    """ + summary_html
+    return summary_html
 
-    return output_html, pd.DataFrame(all_simulations[0]['详细数据'])
+def display_simulation_results(
+    avg_rate, volatility, years, simulation_rounds, distribution_model
+):
+    # 调用模拟函数
+    result = simulate_rate_distribution(
+        avg_rate=avg_rate,
+        volatility=volatility,
+        years=years,
+        simulation_rounds=simulation_rounds,
+        distribution_model=RateDistributionModel[distribution_model]
+    )
+    # 生成HTML摘要
+    html_summary = generate_rate_summary(result)
+    return html_summary
 
 def create_interface():
     with gr.Blocks(theme=gr.themes.Soft(), title="多币种 DCA 收益计算器") as demo:
@@ -269,23 +289,16 @@ def create_interface():
                     step=1,
                     visible=True
                 )
+                distribution_model = gr.Radio(
+                    label="收益率分布模型",
+                    choices=[model.name for model in RateDistributionModel],
+                    value=RateDistributionModel.NORMAL.name
+                )
 
         calculate_btn = gr.Button("开始计算", variant="primary")
         
         output_html = gr.HTML(label="计算结果")
-        output_table = gr.DataFrame(label="年度详细数据")
-        
-        def update_simulation_settings(simulation_mode):
-            return [
-                gr.Slider(visible=simulation_mode),
-                gr.Number(value=0 if not simulation_mode else 8)
-            ]
-        
-        simulation_mode.change(
-            update_simulation_settings,
-            inputs=[simulation_mode],
-            outputs=[simulation_rounds, volatility]
-        )
+        simulation_output_html = gr.HTML(label="收益率分布模拟结果")
         
         calculate_btn.click(
             calculate_investment,
@@ -297,9 +310,10 @@ def create_interface():
                 frequency,
                 currency,
                 simulation_mode,
-                simulation_rounds
+                simulation_rounds,
+                distribution_model
             ],
-            outputs=[output_html, output_table]
+            outputs=[output_html]
         )
     
     return demo
