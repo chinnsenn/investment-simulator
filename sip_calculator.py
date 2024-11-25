@@ -240,11 +240,11 @@ def display_simulation_results(
     html_summary = generate_rate_summary(result)
     return html_summary
 
-def get_nasdaq100_stats(years=40):
+def get_nasdaq100_stats(symbol="QQQ", years=40):
     """获取纳斯达克100指数历史数据统计"""
     try:
         # 使用纳斯达克100 ETF (QQQ)的数据
-        ticker = "QQQ"
+        ticker = symbol
         
         # 获取历史数据
         end_date = pd.Timestamp.now()
@@ -296,8 +296,17 @@ def create_interface():
                     value=8.0,
                     minimum=0.0
                 )
+                symbol = gr.Textbox(
+                    label="指数 Symbol",
+                    value="QQQ"
+                )
+                data_years = gr.Number(
+                    label="过去多少年？",
+                    value=20.0,
+                    minimum=10.0
+                )
                 # 新增导入纳斯达克100数据按钮
-                import_nasdaq_btn = gr.Button("📊 导入纳斯达克100历史数据", variant="secondary")
+                import_nasdaq_btn = gr.Button("📊 导入该标的历史数据", variant="secondary")
                 frequency = gr.Radio(
                     label="定投周期",
                     choices=[f.label for f in InvestmentFrequency],
@@ -331,8 +340,8 @@ def create_interface():
         output_html = gr.HTML(label="计算结果")
         
         # 添加导入数据的处理函数
-        def import_nasdaq_data():
-            avg_return, vol = get_nasdaq100_stats()
+        def import_nasdaq_data(symbol="QQQ", years=40):
+            avg_return, vol = get_nasdaq100_stats(symbol, years)
             return [avg_return, vol]
         
         calculate_btn.click(
@@ -353,6 +362,10 @@ def create_interface():
         
         import_nasdaq_btn.click(
             import_nasdaq_data,
+            inputs=[
+                symbol,
+                data_years
+                ],
             outputs=[avg_rate, volatility]
         )
     
