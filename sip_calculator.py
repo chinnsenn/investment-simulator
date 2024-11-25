@@ -330,6 +330,8 @@ def create_interface():
                     [f.label for f in IndexStock],
                     label="回测指标",
                     value=IndexStock.QQQ.label,
+                    filterable=False,
+                    allow_custom_value=False
                 )
                 data_years = gr.Slider(
                     label="回测年数",
