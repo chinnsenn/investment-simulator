@@ -1,5 +1,7 @@
 import numpy as np
 import gradio as gr
+import pandas as pd
+import yfinance as yf
 from typing import List
 from dataclasses import dataclass
 from classes import *
@@ -238,6 +240,35 @@ def display_simulation_results(
     html_summary = generate_rate_summary(result)
     return html_summary
 
+def get_nasdaq100_stats(years=40):
+    """获取纳斯达克100指数历史数据统计"""
+    try:
+        # 使用纳斯达克100 ETF (QQQ)的数据
+        ticker = "QQQ"
+        
+        # 获取历史数据
+        end_date = pd.Timestamp.now()
+        start_date = end_date - pd.DateOffset(years=years)
+        
+        qqq = yf.Ticker(ticker)
+        hist = qqq.history(start=start_date, end=end_date)
+        
+        # 计算年化收益率
+        annual_returns = hist['Close'].pct_change().dropna()
+        avg_annual_return = (1 + annual_returns.mean()) ** 252 - 1  # 252个交易日
+        
+        # 计算标准差（波动率）
+        volatility = annual_returns.std() * np.sqrt(252)
+        
+        # 保留两位小数并确保返回float类型
+        return (
+            float(round(avg_annual_return * 100, 2)),
+            float(round(volatility * 100, 2))
+        )
+    except Exception as e:
+        print(f"获取数据失败: {str(e)}")
+        return 10.0, 8.0  # 返回默认值
+
 def create_interface():
     with gr.Blocks(theme=gr.themes.Soft(), title="多币种 DCA 收益计算器") as demo:
         gr.Markdown("# 📈 多币种 DCA 收益计算器")
@@ -246,25 +277,27 @@ def create_interface():
             with gr.Column():
                 investment_amount = gr.Number(
                     label="每次定投金额",
-                    value=1000,
-                    minimum=0
+                    value=1000.0,
+                    minimum=0.0
                 )
                 avg_rate = gr.Number(
                     label="预期平均年化收益率（%）",
-                    value=10
+                    value=10.0
                 )
                 years = gr.Number(
                     label="投资年限（年）",
-                    value=5,
-                    minimum=1
+                    value=5.0,
+                    minimum=1.0
                 )
             
             with gr.Column():
                 volatility = gr.Number(
                     label="收益率波动率",
-                    value=8,
-                    minimum=0
+                    value=8.0,
+                    minimum=0.0
                 )
+                # 新增导入纳斯达克100数据按钮
+                import_nasdaq_btn = gr.Button("📊 导入纳斯达克100历史数据", variant="secondary")
                 frequency = gr.Radio(
                     label="定投周期",
                     choices=[f.label for f in InvestmentFrequency],
@@ -296,7 +329,11 @@ def create_interface():
         calculate_btn = gr.Button("开始计算", variant="primary")
         
         output_html = gr.HTML(label="计算结果")
-        simulation_output_html = gr.HTML(label="收益率分布模拟结果")
+        
+        # 添加导入数据的处理函数
+        def import_nasdaq_data():
+            avg_return, vol = get_nasdaq100_stats()
+            return [avg_return, vol]
         
         calculate_btn.click(
             calculate_investment,
@@ -312,6 +349,11 @@ def create_interface():
                 distribution_model
             ],
             outputs=[output_html]
+        )
+        
+        import_nasdaq_btn.click(
+            import_nasdaq_data,
+            outputs=[avg_rate, volatility]
         )
     
     return demo

@@ -5,3 +5,4 @@ typing
 matplotlib
 seaborn
 scipy
+yfinance>=0.2.0
