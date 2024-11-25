@@ -1,13 +1,10 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
-import gradio as gr
 from typing import Dict, List
-import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy import stats
-from decimal import Decimal
 from dataclasses import dataclass
 from enum import Enum
 from classes import *

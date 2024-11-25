@@ -1,7 +1,4 @@
-from dataclasses import dataclass
 from enum import Enum
-import numpy as np
-from typing import Dict, List
 
 class Currency(Enum):
     CNY = ("CNY", "¥")

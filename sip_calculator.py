@@ -1,9 +1,7 @@
 import numpy as np
 import gradio as gr
-from typing import Dict, List
-from decimal import Decimal
+from typing import List
 from dataclasses import dataclass
-from enum import Enum
 from classes import *
 from simulation import simulate_rate_distribution, RateDistributionModel, generate_rate_summary ,plot_rate_distribution
 
