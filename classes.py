@@ -21,3 +21,13 @@ class InvestmentFrequency(Enum):
     def __init__(self, label: str, periods_per_year: int):
         self.label = label
         self.periods_per_year = periods_per_year
+
+class IndexStock(Enum):
+    QQQ = ("纳斯达克100指数", "QQQ")
+    GSCP = ("标普500指数", "^GSPC")
+    DJI = ("道琼斯指数", "^DJI")
+    IWM = ("罗素2000指数", "IWM")
+
+    def __init__(self, label: str, symbol: str):
+        self.label = label
+        self.symbol = symbol
