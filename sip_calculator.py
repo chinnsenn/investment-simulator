@@ -200,24 +200,24 @@ def generate_investment_summary(
             <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
                 <div style="background-color: #c8e6c9; padding: 15px; border-radius: 8px;">
                     <h4 style="color: #2e7d32; margin-top: 0;">最优情况</h4>
-                    <p>最终金额: {format_currency(max(final_amounts), selected_currency)}</p>
-                    <p>总收益: {format_currency(max(total_profits), selected_currency)}</p>
-                    <p>年化收益率: {format_percentage(max(annualized_returns))}</p>
-                    <p>资产回报率: {format_percentage(max(return_rates))}</p>
+                    <p style="color: #000000;">最终金额: {format_currency(max(final_amounts), selected_currency)}</p>
+                    <p style="color: #000000;">总收益: {format_currency(max(total_profits), selected_currency)}</p>
+                    <p style="color: #000000;">年化收益率: {format_percentage(max(annualized_returns))}</p>
+                    <p style="color: #000000;">资产回报率: {format_percentage(max(return_rates))}</p>
                 </div>
                 <div style="background-color: #ffcdd2; padding: 15px; border-radius: 8px;">
                     <h4 style="color: #c62828; margin-top: 0;">最差情况</h4>
-                    <p>最终金额: {format_currency(min(final_amounts), selected_currency)}</p>
-                    <p>总收益: {format_currency(min(total_profits), selected_currency)}</p>
-                    <p>年化收益率: {format_percentage(min(annualized_returns))}</p>
-                    <p>资产回报率: {format_percentage(min(return_rates))}</p>
+                    <p style="color: #000000;">最终金额: {format_currency(min(final_amounts), selected_currency)}</p>
+                    <p style="color: #000000;">总收益: {format_currency(min(total_profits), selected_currency)}</p>
+                    <p style="color: #000000;">年化收益率: {format_percentage(min(annualized_returns))}</p>
+                    <p style="color: #000000;">资产回报率: {format_percentage(min(return_rates))}</p>
                 </div>
                 <div style="background-color: #bbdefb; padding: 15px; border-radius: 8px;">
                     <h4 style="color: #1565c0; margin-top: 0;">平均情况</h4>
-                    <p>最终金额: {format_currency(np.mean(final_amounts), selected_currency)}</p>
-                    <p>总收益: {format_currency(np.mean(total_profits), selected_currency)}</p>
-                    <p>年化收益率: {format_percentage(np.mean(annualized_returns))}</p>
-                    <p>资产回报率: {format_percentage(np.mean(return_rates))}</p>
+                    <p style="color: #000000;">最终金额: {format_currency(np.mean(final_amounts), selected_currency)}</p>
+                    <p style="color: #000000;">总收益: {format_currency(np.mean(total_profits), selected_currency)}</p>
+                    <p style="color: #000000;">年化收益率: {format_percentage(np.mean(annualized_returns))}</p>
+                    <p style="color: #000000;">资产回报率: {format_percentage(np.mean(return_rates))}</p>
                 </div>
             </div>
         </div>
