@@ -272,7 +272,8 @@ def get_nasdaq100_stats(symbol:str, years):
 def create_interface():
     with gr.Blocks(theme=gr.themes.Soft(), title="DCA 收益模拟计算器") as demo:
         gr.Markdown("# 📈 DCA 收益模拟计算器")
-        
+        gr.Markdown("本计算器旨在利用历史数据模拟定投复利收益的回测结果，其结论仅供参考，不构成对未来收益的保证。")
+        gr.Markdown("## **投资市场具有风险，请投资者谨慎决策，理性参与。**")
         with gr.Row():
             with gr.Row():
                 with gr.Column():
@@ -337,7 +338,7 @@ def create_interface():
                     label="回测年数",
                     minimum=2,
                     maximum=40,
-                    value=5,
+                    value=20,
                     step=1,
                     visible=True
                 )
