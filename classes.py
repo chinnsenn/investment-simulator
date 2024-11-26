@@ -23,10 +23,10 @@ class InvestmentFrequency(Enum):
         self.periods_per_year = periods_per_year
 
 class IndexStock(Enum):
-    QQQ = ("纳斯达克100指数", "QQQ")
-    GSCP = ("标普500指数", "^GSPC")
-    DJI = ("道琼斯指数", "^DJI")
-    IWM = ("罗素2000指数", "IWM")
+    QQQ = ("纳斯达克100指数ETF", "QQQ")
+    GSCP = ("标普500指数ETF", "^GSPC")
+    DJI = ("道琼斯指数ETF", "^DJI")
+    IWM = ("罗素2000指数ETF", "IWM")
     BTCF = ("比特币", "BTC=F")
 
     def __init__(self, label: str, symbol: str):
