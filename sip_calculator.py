@@ -353,21 +353,6 @@ def create_interface():
         
         output_html = gr.HTML(label="计算结果")
         
-        def on_dropdown_change(symbol):
-            model = RateDistributionModel.LOGNORMAL.name
-            if(symbol == IndexStock.BTCF.label):
-                model = RateDistributionModel.STUDENT_T.name
-            else:
-                model = RateDistributionModel.LOGNORMAL.name
-            return gr.Button(value=f"导入「{symbol}」的历史回测数据"), gr.Radio(value=model)
-        
-        # 监听下拉框的变化
-        symbollabel.change(
-            fn=on_dropdown_change,  # 处理函数
-            inputs=[symbollabel],      # 输入组件
-            outputs=[import_nasdaq_btn, distribution_model]        # 输出组件
-        )
-        
         calculate_btn.click(
             calculate_investment,
             inputs=[
@@ -382,6 +367,21 @@ def create_interface():
                 distribution_model
             ],
             outputs=[output_html]
+        )
+        
+        def on_dropdown_change(symbol):
+            model = RateDistributionModel.LOGNORMAL.name
+            if(symbol == IndexStock.BTCF.label):
+                model = RateDistributionModel.STUDENT_T.name
+            else:
+                model = RateDistributionModel.LOGNORMAL.name
+            return gr.Button(value=f"导入「{symbol}」的历史回测数据"), gr.Radio(value=model)
+        
+        # 监听下拉框的变化
+        symbollabel.change(
+            fn=on_dropdown_change,  # 处理函数
+            inputs=[symbollabel],      # 输入组件
+            outputs=[import_nasdaq_btn, distribution_model]        # 输出组件
         )
         
         # 添加导入数据的处理函数
