@@ -241,17 +241,15 @@ def display_simulation_results(
     return html_summary
 
 def get_nasdaq100_stats(symbol:str, years):
-    """获取纳斯达克100指数历史数据统计"""
     try:
-        # 使用纳斯达克100 ETF (QQQ)的数据
         ticker = symbol
         
         # 获取历史数据
         end_date = pd.Timestamp.now()
         start_date = end_date - pd.DateOffset(years=years)
         
-        qqq = yf.Ticker(ticker)
-        hist = qqq.history(start=start_date, end=end_date)
+        symbol = yf.Ticker(ticker)
+        hist = symbol.history(start=start_date, end=end_date)
         
         # 计算年化收益率
         annual_returns = hist['Close'].pct_change().dropna()
