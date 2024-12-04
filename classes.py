@@ -29,6 +29,7 @@ class IndexStock(Enum):
     IWM = ("罗素2000指数ETF", "IWM")
     ARKK = ("方舟投資 ETF", "ARKK")
     BTCF = ("比特币", "BTC-USD")
+    CUSTOM = ("自定义", "")
 
     def __init__(self, label: str, symbol: str):
         self.label = label

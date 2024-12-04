@@ -17,6 +17,13 @@ def format_currency(amount: float, currency: Currency) -> str:
 def format_percentage(value: float) -> str:
     """格式化百分比显示"""
     return f"{value:,.2f}%"
+        
+def get_symbol_from_label(label):
+    try:
+        select_symbol = next(s for s in IndexStock if s.label == label).symbol
+    except Exception:
+        select_symbol = label
+    return select_symbol
 
 def generate_yearly_rates(
     avg_rate: float,
@@ -268,6 +275,7 @@ def get_nasdaq100_stats(symbol:str, years):
         return 10.0, 8.0  # 返回默认值
 
 def create_interface():
+    choices = [f.label for f in IndexStock]
     with gr.Blocks(theme=gr.themes.Soft(), title="DCA 收益模拟计算器") as demo:
         gr.Markdown("# 📈 DCA 收益模拟计算器")
         gr.Markdown("本计算器旨在利用历史数据模拟定投复利收益的回测结果，其结论仅供参考，不构成对未来收益的保证。")
@@ -299,11 +307,12 @@ def create_interface():
                 with gr.Column():
                     with gr.Row():
                         symbollabel = gr.Dropdown(
-                            [f.label for f in IndexStock],
+                            choices=choices,
                             label="回测指标",
-                            value=IndexStock.QQQ.label,
+                            value=choices[0],
                             filterable=False,
-                            allow_custom_value=False
+                            allow_custom_value=False,
+                            info="选择'自定义...'可输入新的指标"
                         )
                         data_years = gr.Slider(
                             label="回测年数",
@@ -311,10 +320,13 @@ def create_interface():
                             maximum=40,
                             value=20,
                             step=1,
-                            visible=True
+                            visible=True,
+                            info="选择回测年数"
                         )
+                # 添加数据来源标签
+                data_source_label = gr.Markdown(f"**[「{choices[0]}」数据来源](https://finance.yahoo.com/quote/{get_symbol_from_label(choices[0])})**")
                 # 新增导入纳斯达克100数据按钮
-                import_nasdaq_btn = gr.Button(f"📊 导入「{IndexStock.QQQ.label}」的历史数据", variant="secondary")
+                import_nasdaq_btn = gr.Button(f"📊 导入「{choices[0]}」的历史数据", variant="secondary")
             
             with gr.Column():
                 frequency = gr.Radio(
@@ -367,25 +379,57 @@ def create_interface():
             outputs=[output_html]
         )
         
+        def on_select(choice):
+            """当选择改变时的处理函数"""
+            if choice == IndexStock.CUSTOM.label:
+                return gr.update(value="", filterable=True, allow_custom_value=True)
+            else:
+                return gr.update(value=choice, filterable=False, allow_custom_value=False)
+        
+        symbollabel.select(
+            fn=on_select,
+            inputs=[symbollabel],
+            outputs=[symbollabel]
+        )
+        
         def on_dropdown_change(symbol):
+            """
+            When the dropdown list is changed, return a button with the text "  {symbol}  " and a radio button with the selected distribution model.
+            
+            Args:
+                symbol (str): The selected symbol.
+            
+            Returns:
+                tuple[gr.Button, gr.Radio]: A tuple of a button and a radio button.
+            """
             model = RateDistributionModel.LOGNORMAL.name
             if(symbol == IndexStock.BTCF.label):
                 model = RateDistributionModel.STUDENT_T.name
             else:
                 model = RateDistributionModel.LOGNORMAL.name
-            return gr.Button(value=f"导入「{symbol}」的历史回测数据"), gr.Radio(value=model)
+            return gr.update(value=f"📊 导入「{symbol}」的历史回测数据"), gr.update(value=model), gr.Markdown(f"**[「{symbol}」数据来源](https://finance.yahoo.com/quote/{get_symbol_from_label(symbol)})**")
         
         # 监听下拉框的变化
         symbollabel.change(
             fn=on_dropdown_change,  # 处理函数
             inputs=[symbollabel],      # 输入组件
-            outputs=[import_nasdaq_btn, distribution_model]        # 输出组件
+            outputs=[import_nasdaq_btn, distribution_model, data_source_label]        # 输出组件
         )
         
         # 添加导入数据的处理函数
         def import_nasdaq_data(symbol, years):
-            select_symbol = next(s for s in IndexStock if s.label == symbol).symbol
-            avg_return, vol = get_nasdaq100_stats(select_symbol, years)
+            """
+            导入纳斯达克100指数的历史回测数据
+
+            Parameters:
+                symbol (str): 选择的股票代码
+                years (int): 回测的年数
+
+            Returns:
+                list: [平均年化收益率 (%), 波动率 (%)]
+            """
+
+            avg_return, vol = get_nasdaq100_stats(get_symbol_from_label(symbol), years)
             return [avg_return, vol]
         
         import_nasdaq_btn.click(
