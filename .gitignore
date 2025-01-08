@@ -38,3 +38,7 @@ ENV/
 # Project specific
 dca/
 .gradio/
+
+# Docker
+.docker/
+docker-compose.override.yml
