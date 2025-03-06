@@ -9,4 +9,4 @@ COPY . .
 
 EXPOSE 7860
 
-CMD ["python", "sip_calculator.py"]
+CMD ["python", "dca_calculator.py"]
