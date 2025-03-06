@@ -150,13 +150,13 @@ def calculate_investment(
         annualized_returns, return_rates, selected_currency
     )
     
-    # 生成收益率分布图
-    distribution_plot = plot_rate_distribution(result)
+    # # 生成收益率分布图
+    # distribution_plot = plot_rate_distribution(result)
     
-    # 合并HTML结果
-    final_html = summary_html + distribution_plot
+    # # 合并HTML结果
+    # final_html = summary_html + distribution_plot
     
-    return final_html
+    return summary_html
 
 def generate_investment_summary(
     total_investment: float,
@@ -445,4 +445,4 @@ def create_interface():
 
 if __name__ == "__main__":
     demo = create_interface()
-    demo.launch(server_name="0.0.0.0", server_port=7860)
+    demo.launch(server_port=7860, share=True)
