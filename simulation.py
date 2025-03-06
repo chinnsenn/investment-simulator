@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
-from typing import Dict, List, Tuple, Optional, Union, Any
+from typing import Dict, List, Tuple, Optional, Union, Any, Callable
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy import stats
@@ -11,6 +11,7 @@ from classes import *
 import io
 import base64
 from config import CONFIG
+from functools import lru_cache
 
 class RateDistributionModel(Enum):
     NORMAL = "Normal"
@@ -95,6 +96,164 @@ def simulate_rate_distribution(
         risk_metrics=risk_metrics
     )
 
+@lru_cache(maxsize=32)
+def _get_distribution_params(
+    mu: float, 
+    sigma: float, 
+    distribution_model: RateDistributionModel, 
+    **kwargs: Any
+) -> Dict[str, float]:
+    """
+    获取分布模型的参数
+    
+    Args:
+        mu: 平均收益率
+        sigma: 波动率
+        distribution_model: 分布模型
+        **kwargs: 额外参数
+    
+    Returns:
+        Dict[str, float]: 分布参数字典
+    """
+    match distribution_model:
+        case RateDistributionModel.NORMAL:
+            return {
+                'mu': mu * 100,  # 转回百分比
+                'sigma': sigma * 100
+            }
+        case RateDistributionModel.LOGNORMAL:
+            # 向量化计算对数正态分布参数
+            mu_log = np.log((mu ** 2) / np.sqrt(sigma ** 2 + mu ** 2))
+            sigma_log = np.sqrt(np.log(1 + (sigma ** 2) / (mu ** 2)))
+            return {
+                'mu_log': mu_log,
+                'sigma_log': sigma_log,
+                'mu': mu * 100,
+                'sigma': sigma * 100
+            }
+        case RateDistributionModel.STUDENT_T:
+            df = kwargs.get('df', CONFIG.default_t_distribution_df)
+            return {
+                'mu': mu * 100,
+                'sigma': sigma * 100,
+                'df': df
+            }
+        case RateDistributionModel.UNIFORM:
+            min_rate = kwargs.get('min_rate', mu - sigma * np.sqrt(3))
+            max_rate = kwargs.get('max_rate', mu + sigma * np.sqrt(3))
+            return {
+                'min_rate': min_rate * 100,
+                'max_rate': max_rate * 100,
+                'mu': mu * 100,
+                'sigma': sigma * 100
+            }
+        case _:
+            raise ValueError(f"不支持的分布模型: {distribution_model}")
+
+def _calculate_statistics(rates: np.ndarray) -> Dict[str, float]:
+    """
+    计算收益率的统计指标
+    
+    Args:
+        rates: 收益率数组(小数形式)
+    
+    Returns:
+        Dict[str, float]: 统计指标字典
+    """
+    # 使用向量化操作计算统计指标
+    mean = np.mean(rates) * 100
+    median = np.median(rates) * 100
+    std = np.std(rates) * 100
+    min_val = np.min(rates) * 100
+    max_val = np.max(rates) * 100
+    
+    # 计算分位数
+    percentiles = np.percentile(rates, [5, 25, 75, 95]) * 100
+    
+    # 计算偏度和峰度
+    skewness = stats.skew(rates)
+    kurtosis = stats.kurtosis(rates)
+    
+    return {
+        'mean': mean,
+        'median': median,
+        'std': std,
+        'min': min_val,
+        'max': max_val,
+        'percentile_5': percentiles[0],
+        'percentile_25': percentiles[1],
+        'percentile_75': percentiles[2],
+        'percentile_95': percentiles[3],
+        'skewness': skewness,
+        'kurtosis': kurtosis
+    }
+
+def calculate_risk_metrics(rates: np.ndarray, risk_free_rate: float) -> Dict[str, float]:
+    """
+    计算风险指标，包括最大回撤、夏普比率和索提诺比率
+    
+    Args:
+        rates: 收益率数组（小数形式）
+        risk_free_rate: 无风险利率（小数形式）
+        
+    Returns:
+        Dict[str, float]: 包含风险指标的字典
+    """
+    # 向量化计算风险指标
+    mean_return = np.mean(rates)
+    std_return = np.std(rates)
+    
+    # 计算夏普比率
+    sharpe_ratio = (mean_return - risk_free_rate) / std_return if std_return > 0 else 0
+    
+    # 计算下行标准差
+    downside_returns = np.where(rates < risk_free_rate, rates - risk_free_rate, 0)
+    downside_deviation = np.std(downside_returns)
+    
+    # 计算索提诺比率
+    sortino_ratio = (mean_return - risk_free_rate) / downside_deviation if downside_deviation > 0 else 0
+    
+    # 计算最大回撤
+    max_drawdown = calculate_maximum_drawdown(rates)
+    
+    # 计算正收益率概率
+    positive_prob = np.mean(rates > 0) * 100
+    
+    # 计算负收益率概率
+    negative_prob = np.mean(rates < 0) * 100
+    
+    return {
+        'sharpe_ratio': sharpe_ratio,
+        'sortino_ratio': sortino_ratio,
+        'max_drawdown': max_drawdown * 100,  # 转为百分比
+        'positive_probability': positive_prob,
+        'negative_probability': negative_prob
+    }
+
+def calculate_maximum_drawdown(returns: np.ndarray) -> float:
+    """
+    计算最大回撤
+    
+    最大回撤是投资组合从峰值到谷值的最大跌幅，用于衡量投资风险
+    
+    Args:
+        returns: 收益率数组（小数形式）
+        
+    Returns:
+        float: 最大回撤值（小数形式）
+    """
+    # 向量化计算累积收益
+    cumulative_returns = np.cumprod(1 + returns)
+    
+    # 计算累积最大值
+    running_max = np.maximum.accumulate(cumulative_returns)
+    
+    # 计算回撤
+    drawdowns = (running_max - cumulative_returns) / running_max
+    
+    # 返回最大回撤
+    return np.max(drawdowns) if len(drawdowns) > 0 else 0
+
 def _generate_rates(
     mu: float, 
     sigma: float, 
@@ -121,11 +280,13 @@ def _generate_rates(
     Returns:
         np.ndarray: 生成的收益率数组
     """
+    # 使用向量化操作生成收益率
     match distribution_model:
         case RateDistributionModel.NORMAL:
             rates = np.random.normal(mu, sigma, total_samples)
             
         case RateDistributionModel.LOGNORMAL:
+            # 向量化计算对数正态分布参数
             mu_log = np.log((mu ** 2) / np.sqrt(sigma ** 2 + mu ** 2))
             sigma_log = np.sqrt(np.log(1 + (sigma ** 2) / (mu ** 2)))
             rates = np.random.lognormal(mu_log, sigma_log, total_samples)
@@ -144,11 +305,11 @@ def _generate_rates(
     
     # 应用自相关性（如果指定）
     if autocorrelation != 0 and years > 1:
-        rates = _apply_autocorrelation(rates, mu, sigma, autocorrelation, simulation_rounds, years)
+        rates = _apply_autocorrelation_vectorized(rates, mu, sigma, autocorrelation, simulation_rounds, years)
     
     return rates
 
-def _apply_autocorrelation(
+def _apply_autocorrelation_vectorized(
     rates: np.ndarray, 
     mu: float, 
     sigma: float, 
@@ -157,7 +318,7 @@ def _apply_autocorrelation(
     years: int
 ) -> np.ndarray:
     """
-    应用自相关性到收益率序列
+    向量化应用自相关性到收益率序列
     
     Args:
         rates: 原始收益率数组
@@ -170,134 +331,21 @@ def _apply_autocorrelation(
     Returns:
         np.ndarray: 应用自相关后的收益率数组
     """
+    # 重塑数组以便于处理
     rates_reshaped = rates.reshape(simulation_rounds, years)
+    
+    # 预计算噪声项
+    noise_scale = sigma * np.sqrt(1 - autocorrelation**2)
+    noise = np.random.normal(0, noise_scale, (simulation_rounds, years-1))
+    
+    # 向量化应用自相关公式
     for i in range(simulation_rounds):
+        # 保留第一年的收益率
         for j in range(1, years):
             # 应用自相关公式: r_t = μ + ρ(r_{t-1} - μ) + ε_t
-            # 其中ε_t是随机噪声，μ是平均收益率，ρ是自相关系数
-            noise = np.random.normal(0, sigma * np.sqrt(1 - autocorrelation**2))
-            rates_reshaped[i, j] = mu + autocorrelation * (rates_reshaped[i, j-1] - mu) + noise
+            rates_reshaped[i, j] = mu + autocorrelation * (rates_reshaped[i, j-1] - mu) + noise[i, j-1]
+    
     return rates_reshaped.flatten()
-
-def _get_distribution_params(
-    mu: float, 
-    sigma: float, 
-    distribution_model: RateDistributionModel, 
-    **kwargs: Any
-) -> Dict[str, float]:
-    """
-    获取分布模型的参数
-    
-    Args:
-        mu: 平均收益率
-        sigma: 波动率
-        distribution_model: 分布模型
-        **kwargs: 额外参数
-    
-    Returns:
-        Dict[str, float]: 分布参数字典
-    """
-    match distribution_model:
-        case RateDistributionModel.NORMAL:
-            return {'mu': mu, 'sigma': sigma}
-            
-        case RateDistributionModel.LOGNORMAL:
-            mu_log = np.log((mu ** 2) / np.sqrt(sigma ** 2 + mu ** 2))
-            sigma_log = np.sqrt(np.log(1 + (sigma ** 2) / (mu ** 2)))
-            return {'mu_log': mu_log, 'sigma_log': sigma_log}
-            
-        case RateDistributionModel.STUDENT_T:
-            df = kwargs.get('df', CONFIG.default_t_distribution_df)
-            return {'mu': mu, 'sigma': sigma, 'df': df}
-            
-        case RateDistributionModel.UNIFORM:
-            min_rate = kwargs.get('min_rate', mu - sigma * np.sqrt(3))
-            max_rate = kwargs.get('max_rate', mu + sigma * np.sqrt(3))
-            return {'min_rate': min_rate, 'max_rate': max_rate}
-            
-        case _:
-            return {}
-
-def _calculate_statistics(rates: np.ndarray) -> Dict[str, float]:
-    """
-    计算收益率的统计指标
-    
-    Args:
-        rates: 收益率数组(小数形式)
-    
-    Returns:
-        Dict[str, float]: 统计指标字典
-    """
-    stats_dict = {
-        'mean': np.mean(rates) * 100,
-        'median': np.median(rates) * 100,
-        'std': np.std(rates) * 100,
-        'skewness': stats.skew(rates),
-        'kurtosis': stats.kurtosis(rates),
-        'min': np.min(rates) * 100,
-        'max': np.max(rates) * 100
-    }
-    
-    # 添加分位数
-    percentiles = [1, 5, 10, 25, 75, 90, 95, 99]
-    for p in percentiles:
-        stats_dict[f'percentile_{p}'] = np.percentile(rates, p) * 100
-    
-    return stats_dict
-
-def calculate_risk_metrics(rates: np.ndarray, risk_free_rate: float) -> Dict[str, float]:
-    """
-    计算风险指标，包括最大回撤、夏普比率和索提诺比率
-    
-    Args:
-        rates: 收益率数组（小数形式）
-        risk_free_rate: 无风险利率（小数形式）
-        
-    Returns:
-        Dict[str, float]: 包含风险指标的字典
-    """
-    # 计算最大回撤
-    max_drawdown = calculate_maximum_drawdown(rates)
-    
-    # 计算夏普比率 = (平均收益率 - 无风险利率) / 收益率标准差
-    excess_return = np.mean(rates) - risk_free_rate
-    sharpe_ratio = excess_return / np.std(rates) if np.std(rates) > 0 else 0
-    
-    # 计算索提诺比率 = (平均收益率 - 无风险利率) / 下行标准差
-    # 下行标准差只考虑低于目标收益率（通常是无风险利率）的收益率
-    downside_returns = rates[rates < risk_free_rate] - risk_free_rate
-    downside_deviation = np.std(downside_returns) if len(downside_returns) > 0 else 0
-    sortino_ratio = excess_return / downside_deviation if downside_deviation > 0 else 0
-    
-    return {
-        'max_drawdown': max_drawdown * 100,  # 转为百分比
-        'sharpe_ratio': sharpe_ratio,
-        'sortino_ratio': sortino_ratio
-    }
-
-def calculate_maximum_drawdown(returns: np.ndarray) -> float:
-    """
-    计算最大回撤
-    
-    最大回撤是投资组合从峰值到谷值的最大跌幅，用于衡量投资风险
-    
-    Args:
-        returns: 收益率数组（小数形式）
-        
-    Returns:
-        float: 最大回撤值（小数形式）
-    """
-    # 将收益率转换为累积收益
-    cumulative_returns = np.cumprod(1 + returns)
-    
-    # 计算运行最大值
-    running_max = np.maximum.accumulate(cumulative_returns)
-    
-    # 计算每个点的回撤
-    drawdowns = (running_max - cumulative_returns) / running_max
-    
-    # 返回最大回撤
-    return np.max(drawdowns) if len(drawdowns) > 0 else 0
 
 def plot_rate_distribution(result: RateSimulationResult) -> str:
     """

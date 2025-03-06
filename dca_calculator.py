@@ -2,10 +2,13 @@ import numpy as np
 import gradio as gr
 import pandas as pd
 import yfinance as yf
-from typing import List
+from typing import List, Dict, Any, Tuple, Callable
 from dataclasses import dataclass
 from classes import *
-from simulation import simulate_rate_distribution, RateDistributionModel, generate_rate_summary ,plot_rate_distribution
+from simulation import simulate_rate_distribution, RateDistributionModel, generate_rate_summary, plot_rate_distribution
+import concurrent.futures
+from functools import lru_cache
+import time
 
 def format_currency(amount: float, currency: Currency) -> str:
     """格式化货币显示"""
@@ -61,6 +64,108 @@ def generate_yearly_rates(
     
     return rates.tolist()
 
+def calculate_period_growth(period_rate: float, period_investment: float, current_amount: float, timing_type: str) -> Tuple[float, float]:
+    """计算单期增长，使用缓存减少重复计算
+    
+    Args:
+        period_rate: 单期收益率
+        period_investment: 单期投资金额
+        current_amount: 当前金额
+        timing_type: 投资时点类型
+        
+    Returns:
+        Tuple[float, float]: (新金额, 投资金额)
+    """
+    if timing_type == "期初":
+        # 期初投资：先投资，然后计算整期收益
+        new_amount = (current_amount + period_investment) * (1 + period_rate)
+        return new_amount, period_investment
+    elif timing_type == "期末":
+        # 期末投资：先计算现有资金收益，然后投资
+        new_amount = current_amount * (1 + period_rate) + period_investment
+        return new_amount, period_investment
+    else:  # 期中投资（默认）
+        # 期中投资：先计算半期收益，然后投资，再计算半期收益
+        new_amount = current_amount * (1 + period_rate/2)
+        new_amount = (new_amount + period_investment) * (1 + period_rate/2)
+        return new_amount, period_investment
+
+def calculate_year_investment_vectorized(yearly_rates, yearly_investment, periods_per_year, selected_timing, selected_currency):
+    """向量化版本的年度投资计算函数
+    
+    Args:
+        yearly_rates: 年度收益率数组
+        yearly_investment: 年度投资总额
+        periods_per_year: 每年投资期数
+        selected_timing: 选择的投资时点
+        selected_currency: 选择的货币类型
+        
+    Returns:
+        tuple: (结果列表, 最终金额, 总投资, 总收益)
+    """
+    results = []
+    current_amount = 0
+    period_investment = yearly_investment / periods_per_year
+    total_investment = 0
+    
+    # 预计算每年的期间收益率
+    period_rates = np.array([(1 + rate/100)**(1/periods_per_year) - 1 for rate in yearly_rates])
+    
+    for year, annual_rate in enumerate(yearly_rates, 1):
+        period_rate = period_rates[year-1]
+        year_start_amount = current_amount
+        
+        # 向量化计算一年内所有期间的投资和收益
+        if selected_timing == InvestmentTiming.BEGINNING:
+            # 期初投资向量化计算
+            # 先一次性投入所有期间的资金
+            year_investment = period_investment * periods_per_year
+            total_investment += year_investment
+            
+            # 计算复利增长
+            growth_factors = np.cumprod(np.full(periods_per_year, 1 + period_rate))
+            current_amount = year_start_amount + year_investment
+            current_amount = current_amount * growth_factors[-1]
+            
+        elif selected_timing == InvestmentTiming.END:
+            # 期末投资向量化计算
+            # 先计算现有资金的复利增长
+            current_amount *= (1 + period_rate) ** periods_per_year
+            
+            # 然后添加投资（每期投资不产生当期收益）
+            year_investment = period_investment * periods_per_year
+            current_amount += year_investment
+            total_investment += year_investment
+            
+        else:  # 期中投资（默认）
+            # 期中投资向量化计算
+            # 计算每期的半期复利因子
+            half_period_factor = (1 + period_rate/2)
+            
+            # 初始金额先增长半期
+            current_amount *= half_period_factor
+            
+            # 添加所有期间的投资
+            year_investment = period_investment * periods_per_year
+            current_amount += year_investment
+            total_investment += year_investment
+            
+            # 再增长半期
+            current_amount *= half_period_factor ** (periods_per_year - 1)
+        
+        year_profit = current_amount - year_start_amount - year_investment
+        
+        results.append({
+            '年份': f"第{year}年",
+            '年化收益率': format_percentage(annual_rate),
+            '投资金额': format_currency(year_investment, selected_currency),
+            '当年收益': format_currency(year_profit, selected_currency),
+            '年末总额': format_currency(current_amount, selected_currency),
+            '累计投入': format_currency(total_investment, selected_currency)
+        })
+        
+    return results, current_amount, total_investment, current_amount - total_investment
+
 def calculate_investment(
     investment_amount: float,
     avg_rate: float,
@@ -94,68 +199,66 @@ def calculate_investment(
         distribution_model=RateDistributionModel[distribution_model]
     )
     
-    def calculate_year_investment(yearly_rates):
-        results = []
-        current_amount = 0
-        period_investment = yearly_investment / periods_per_year
-        total_investment = 0
-        
-        for year, annual_rate in enumerate(yearly_rates, 1):
-            # 使用复合收益率公式计算每期收益率
-            period_rate = (1 + annual_rate/100)**(1/periods_per_year) - 1
-            year_start_amount = current_amount
-            
-            for _ in range(periods_per_year):
-                # 根据投资时点调整收益计算顺序
-                if selected_timing == InvestmentTiming.BEGINNING:
-                    # 期初投资：先投资，然后计算整期收益
-                    current_amount += period_investment
-                    total_investment += period_investment
-                    current_amount *= (1 + period_rate)
-                elif selected_timing == InvestmentTiming.END:
-                    # 期末投资：先计算现有资金收益，然后投资
-                    current_amount *= (1 + period_rate)
-                    current_amount += period_investment
-                    total_investment += period_investment
-                else:  # 期中投资（默认）
-                    # 期中投资：先计算半期收益，然后投资，再计算半期收益
-                    current_amount *= (1 + period_rate/2)
-                    current_amount += period_investment
-                    total_investment += period_investment
-                    current_amount *= (1 + period_rate/2)
-            
-            year_investment = period_investment * periods_per_year
-            year_profit = current_amount - year_start_amount - year_investment
-            
-            results.append({
-                '年份': f"第{year}年",
-                '年化收益率': format_percentage(annual_rate),
-                '投资金额': format_currency(year_investment, selected_currency),
-                '当年收益': format_currency(year_profit, selected_currency),
-                '年末总额': format_currency(current_amount, selected_currency),
-                '累计投入': format_currency(total_investment, selected_currency)
-            })
-            
-        return results, current_amount, total_investment, current_amount - total_investment
-
     # 存储所有模拟结果
     all_simulations = []
     
     # 使用生成的收益率进行模拟
     rates_reshaped = result.rates.reshape(simulation_rounds, years)
-    for yearly_rates in rates_reshaped:
-        sim_results, final_amt, total_inv, total_prof = calculate_year_investment(yearly_rates)
-        # 使用复合收益率公式计算年化收益率
-        annualized_return = ((final_amt/total_inv)**(1/years) - 1) * 100
-        return_rate = (final_amt / total_inv * 100) - 100
-        all_simulations.append({
-            '最终金额': final_amt,
-            '总投资': total_inv,
-            '总收益': total_prof,
-            '年化收益率': annualized_return,
-            '资产回报率': return_rate,
-            '详细数据': sim_results
-        })
+    
+    # 使用并行计算加速多次模拟
+    if simulation_rounds > 1:
+        start_time = time.time()
+        with concurrent.futures.ProcessPoolExecutor() as executor:
+            # 创建并行任务，传递所有必要参数
+            futures = []
+            for i, yearly_rates in enumerate(rates_reshaped):
+                futures.append(
+                    executor.submit(
+                        calculate_year_investment_vectorized,
+                        yearly_rates,
+                        yearly_investment,
+                        periods_per_year,
+                        selected_timing,
+                        selected_currency
+                    )
+                )
+            
+            # 收集结果
+            for future in concurrent.futures.as_completed(futures):
+                sim_results, final_amt, total_inv, total_prof = future.result()
+                # 使用复合收益率公式计算年化收益率
+                annualized_return = ((final_amt/total_inv)**(1/years) - 1) * 100
+                return_rate = (final_amt / total_inv * 100) - 100
+                all_simulations.append({
+                    '最终金额': final_amt,
+                    '总投资': total_inv,
+                    '总收益': total_prof,
+                    '年化收益率': annualized_return,
+                    '资产回报率': return_rate,
+                    '详细数据': sim_results
+                })
+        print(f"并行计算完成，耗时: {time.time() - start_time:.2f}秒")
+    else:
+        # 单次模拟不需要并行
+        for yearly_rates in rates_reshaped:
+            sim_results, final_amt, total_inv, total_prof = calculate_year_investment_vectorized(
+                yearly_rates, 
+                yearly_investment, 
+                periods_per_year, 
+                selected_timing, 
+                selected_currency
+            )
+            # 使用复合收益率公式计算年化收益率
+            annualized_return = ((final_amt/total_inv)**(1/years) - 1) * 100
+            return_rate = (final_amt / total_inv * 100) - 100
+            all_simulations.append({
+                '最终金额': final_amt,
+                '总投资': total_inv,
+                '总收益': total_prof,
+                '年化收益率': annualized_return,
+                '资产回报率': return_rate,
+                '详细数据': sim_results
+            })
 
     # 计算统计结果
     final_amounts = [sim['最终金额'] for sim in all_simulations]
@@ -169,12 +272,6 @@ def calculate_investment(
         total_investment, final_amounts, total_profits, 
         annualized_returns, return_rates, selected_currency
     )
-    
-    # # 生成收益率分布图
-    # distribution_plot = plot_rate_distribution(result)
-    
-    # # 合并HTML结果
-    # final_html = summary_html + distribution_plot
     
     return summary_html
 
