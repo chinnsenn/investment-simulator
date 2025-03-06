@@ -70,7 +70,8 @@ def calculate_investment(
     currency: str,
     simulation_mode: bool,
     simulation_rounds: int,
-    distribution_model: str
+    distribution_model: str,
+    investment_timing: str = "期中"  # 默认为期中投资
 ) -> tuple:
     """投资计算主函数"""
     if not simulation_mode:
@@ -79,6 +80,8 @@ def calculate_investment(
     
     selected_currency = Currency[currency]
     selected_frequency = next(f for f in InvestmentFrequency if f.label == frequency)
+    selected_timing = next(t for t in InvestmentTiming if t.label == investment_timing)
+    
     periods_per_year = selected_frequency.periods_per_year
     yearly_investment = investment_amount * periods_per_year
     
@@ -97,21 +100,36 @@ def calculate_investment(
         period_investment = yearly_investment / periods_per_year
         total_investment = 0
         
-        for year, rate in enumerate(yearly_rates, 1):
-            period_rate = rate / 100 / periods_per_year
+        for year, annual_rate in enumerate(yearly_rates, 1):
+            # 使用复合收益率公式计算每期收益率
+            period_rate = (1 + annual_rate/100)**(1/periods_per_year) - 1
             year_start_amount = current_amount
             
             for _ in range(periods_per_year):
-                current_amount += period_investment
-                total_investment += period_investment
-                current_amount *= (1 + period_rate)
+                # 根据投资时点调整收益计算顺序
+                if selected_timing == InvestmentTiming.BEGINNING:
+                    # 期初投资：先投资，然后计算整期收益
+                    current_amount += period_investment
+                    total_investment += period_investment
+                    current_amount *= (1 + period_rate)
+                elif selected_timing == InvestmentTiming.END:
+                    # 期末投资：先计算现有资金收益，然后投资
+                    current_amount *= (1 + period_rate)
+                    current_amount += period_investment
+                    total_investment += period_investment
+                else:  # 期中投资（默认）
+                    # 期中投资：先计算半期收益，然后投资，再计算半期收益
+                    current_amount *= (1 + period_rate/2)
+                    current_amount += period_investment
+                    total_investment += period_investment
+                    current_amount *= (1 + period_rate/2)
             
             year_investment = period_investment * periods_per_year
             year_profit = current_amount - year_start_amount - year_investment
             
             results.append({
                 '年份': f"第{year}年",
-                '年化收益率': format_percentage(rate),
+                '年化收益率': format_percentage(annual_rate),
                 '投资金额': format_currency(year_investment, selected_currency),
                 '当年收益': format_currency(year_profit, selected_currency),
                 '年末总额': format_currency(current_amount, selected_currency),
@@ -127,12 +145,14 @@ def calculate_investment(
     rates_reshaped = result.rates.reshape(simulation_rounds, years)
     for yearly_rates in rates_reshaped:
         sim_results, final_amt, total_inv, total_prof = calculate_year_investment(yearly_rates)
+        # 使用复合收益率公式计算年化收益率
+        annualized_return = ((final_amt/total_inv)**(1/years) - 1) * 100
         return_rate = (final_amt / total_inv * 100) - 100
         all_simulations.append({
             '最终金额': final_amt,
             '总投资': total_inv,
             '总收益': total_prof,
-            '年化收益率': ((final_amt/total_inv)**(1/years) - 1) * 100,
+            '年化收益率': annualized_return,
             '资产回报率': return_rate,
             '详细数据': sim_results
         })
@@ -357,6 +377,11 @@ def create_interface():
                     value=RateDistributionModel.LOGNORMAL.name,
                     visible=False
                 )
+                investment_timing = gr.Radio(
+                    label="投资时点",
+                    choices=[t.label for t in InvestmentTiming],
+                    value=InvestmentTiming.MIDDLE.label
+                )
                 
 
         calculate_btn = gr.Button("开始计算", variant="primary")
@@ -374,7 +399,8 @@ def create_interface():
                 currency,
                 simulation_mode,
                 simulation_rounds,
-                distribution_model
+                distribution_model,
+                investment_timing
             ],
             outputs=[output_html]
         )

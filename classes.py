@@ -22,6 +22,15 @@ class InvestmentFrequency(Enum):
         self.label = label
         self.periods_per_year = periods_per_year
 
+class InvestmentTiming(Enum):
+    BEGINNING = ("期初", "beginning")
+    MIDDLE = ("期中", "middle")
+    END = ("期末", "end")
+    
+    def __init__(self, label: str, code: str):
+        self.label = label
+        self.code = code
+
 class IndexStock(Enum):
     QQQ = ("纳斯达克100指数ETF", "QQQ")
     GSCP = ("标普500指数ETF", "^GSPC")
