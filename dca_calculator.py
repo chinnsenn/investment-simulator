@@ -2,20 +2,15 @@ import numpy as np
 import gradio as gr
 import pandas as pd
 import yfinance as yf
-from typing import List, Dict, Any, Tuple, Callable, Optional, Union
-from dataclasses import dataclass
+from typing import List
 from classes import *
-# Fix circular import by using the correct imports
 from utils.rate_distributions import RateDistributionModel
-from utils.simulation_utils import simulate_rate_distribution, generate_rate_summary, plot_rate_distribution
-import concurrent.futures
-from functools import lru_cache
-import time
+from utils.simulation_utils import simulate_rate_distribution, generate_rate_summary
 from config import INVESTMENT_CONFIG
 from utils.investment_utils import (
     format_currency, format_percentage, get_enum_by_label, get_currency_by_code,
-    calculate_year_investment_vectorized, run_parallel_simulations, run_sequential_simulations,
-    extract_simulation_statistics, calculate_period_growth, generate_yearly_rates
+    run_parallel_simulations, run_sequential_simulations,
+    extract_simulation_statistics
 )
 
 def get_symbol_from_label(label: str) -> str:

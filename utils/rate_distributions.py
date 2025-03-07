@@ -2,8 +2,8 @@
 收益率分布模块
 提供不同的收益率分布模型实现
 """
-from typing import List, Dict, Any, Optional, Protocol, Callable
-from enum import Enum, auto
+from typing import List
+from enum import Enum
 import numpy as np
 from scipy import stats
 from dataclasses import dataclass

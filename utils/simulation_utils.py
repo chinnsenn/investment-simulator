@@ -8,8 +8,7 @@ import matplotlib
 matplotlib.use('Agg')
 import io
 import base64
-from typing import List, Dict, Any, Tuple, Optional
-from utils.rate_distributions import RateDistributionModel, generate_yearly_rates
+from utils.rate_distributions import generate_yearly_rates
 from config.investment_config import InvestmentConfig
 
 

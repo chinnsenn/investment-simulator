@@ -3,13 +3,11 @@
 提供投资计算相关的工具函数
 """
 import numpy as np
-from typing import List, Dict, Any, Tuple, Union, Optional
-from functools import lru_cache
+from typing import List, Dict, Any, Tuple
 import concurrent.futures
 import time
-from enum import Enum
 
-from classes import Currency, InvestmentFrequency, InvestmentTiming
+from classes import Currency, InvestmentTiming
 from utils.rate_distributions import RateDistributionModel
 from config import INVESTMENT_CONFIG
 
